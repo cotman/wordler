@@ -1,0 +1,167 @@
+#!/usr/bin/env python
+"""
+Attempts to solve Wordle-type puzzles using the Linux dictionary.
+"""
+
+
+import argparse
+import os
+import random
+import re
+import sys
+import traceback
+from textwrap import dedent
+
+
+def get_words(length):
+    """
+    Get a list of possible words.
+    """
+
+    return [
+        word.strip()
+        for word
+        in open("/usr/share/dict/words", "r").readlines()
+        if word[:-1].isalpha()
+        and not word[0].isupper()
+        and len(word) == length + 1
+    ]
+
+
+def get_guess(words, positional_match, must_contain, must_not_contain):
+    """
+    Return a guess, from the available words that match the passed criteria.
+    """
+
+    guesses = [
+        word
+        for word
+        in words
+        if re.match(
+            "".join(positional_match),
+            word
+        )
+        and all(
+            [
+                char in word
+                for char
+                in must_contain
+            ]
+        )
+        and not any(
+            [
+                char in word
+                for char
+                in must_not_contain
+            ]
+        )
+    ]
+
+    print(f"There are '{len(guesses)}' possible matches")
+
+    return random.choice(guesses) if guesses else None
+
+
+def main(length):
+    """
+    Main.
+    """
+
+    words = get_words(length)
+
+    positional_match = [
+        "[a-z]"
+        for _
+        in range(length)
+    ]
+    must_contain = set()
+    must_not_contain = set()
+
+    while words:
+        guess = get_guess(
+            words,
+            positional_match,
+            must_contain,
+            must_not_contain
+        )
+
+        if not guess:
+            print("No idea, sorry")
+
+            sys.exit()
+
+        words.remove(guess)
+
+        print(f"Try '{guess}'...")
+
+        results = None
+
+        while not results or not all(
+            [
+                char in "+*-"
+                for char
+                in results
+            ]
+        ) or len(results) != length:
+            results = input("Results [+*-] > ")
+
+            if results == "quit":
+                sys.exit()
+            elif results == "reset":
+                os.execv(
+                    sys.argv[0],
+                    sys.argv
+                )
+
+        eliminations = []
+
+        for index, result in enumerate(results):
+            if result == "+":
+                positional_match[index] = guess[index]
+                must_contain.add(guess[index])
+            elif result == "*":
+                must_contain.add(guess[index])
+            elif result == "-":
+                eliminations.append(guess[index])
+
+        for elimination in eliminations:
+            if elimination not in must_contain:
+                must_not_contain.add(elimination)
+
+
+if __name__ == "__main__":
+    """
+    Entry point.
+    """
+
+    parser = argparse.ArgumentParser(
+        description=dedent(
+            """
+                Wordler.
+                Try my guess and provide the results as follows:
+                * '+' : Green, correct letter in correct place
+                * '*' : Yellow, correct letter in incorrect place
+                * '-' : Grey, incorrect letter not in the word
+                e.g. : '--?++'
+                'quit' to exit
+                'reset' to restart
+            """
+        ),
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument(
+        "--length",
+        help="Length of the word to guess.  (default: %(default)s)",
+        type=int,
+        default=5
+    )
+    args = parser.parse_args()
+
+    try:
+        main(args.length)
+    except (KeyboardInterrupt, SystemExit):
+        print("Exit")
+    except:
+        print(f"ERROR: {traceback.format_exc()}")
+
+        sys.exit(1)
